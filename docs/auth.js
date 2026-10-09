@@ -23,7 +23,7 @@ async function refreshAuth(){
   const {data,error:queryError}=await authClient.from("child_devices").select("id,display_name,last_seen_at").order("created_at",{ascending:false});
   if(queryError){devices.textContent="Unable to load devices: "+queryError.message;return;}
   devices.replaceChildren();
-  if(!data.length){devices.textContent="No devices paired yet. Secure device pairing is not enabled.";return;}
+  if(!data.length){devices.textContent="No devices paired yet. Generate a code below and enter it on the child device.";return;}
   for(const d of data){
     const section=document.createElement("section");
     const h=document.createElement("h3");h.textContent=d.display_name;section.append(h);
@@ -44,3 +44,21 @@ if(authClient){
 }else{
   authStatus.textContent="Authentication library unavailable. Try Chrome, then refresh.";
 }
+
+const pairing=document.createElement("section");
+pairing.innerHTML='<h3>Pair a child device</h3><p>Generate a one-time code (valid 10 minutes) and enter it on the child device. Do not share this code publicly.</p><input id="child-name" placeholder="Child device name" maxlength="100" aria-label="Child device name"> <button id="make-code">Generate pairing code</button><p id="pair-result" style="overflow-wrap:anywhere"></p>';
+document.querySelector("main").insertBefore(pairing,document.querySelector("main").children[1]);
+document.getElementById("make-code").addEventListener("click",async()=>{
+ const output=document.getElementById("pair-result");
+ output.textContent="Generating…";
+ const {data:{session}}=await authClient.auth.getSession();
+ if(!session){output.textContent="Please sign in first.";return;}
+ try{
+  const response=await fetch(WATCHER_CONFIG.supabaseUrl+"/functions/v1/watcher-sync",{
+   method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+session.access_token,"apikey":WATCHER_CONFIG.publishableKey},
+   body:JSON.stringify({action:"create",name:document.getElementById("child-name").value||"Child device"})
+  });
+  const result=await response.json();
+  output.textContent=response.ok?"Enter this code in Watcher Child within 10 minutes: "+result.code:(result.error||"Unable to create code");
+ }catch(e){output.textContent="Connection error: "+e.message}
+});
