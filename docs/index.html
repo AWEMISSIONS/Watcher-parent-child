@@ -8,11 +8,11 @@ h1{margin:0}p{line-height:1.5}button,input{font:inherit;padding:12px;border-radi
 table{width:100%;border-collapse:collapse;overflow-wrap:anywhere}td,th{text-align:left;border-bottom:1px solid #ddd;padding:10px}
 small{color:#536174}.muted{color:#536174}#status{font-weight:600}
 </style></head><body><header><h1>Watcher</h1><p>Parent dashboard · local report viewer</p></header><main>
-<section><h2>Import child activity</h2><p>This first version reads a report exported from Watcher Child. Reports stay in this browser session and are not uploaded to a server.</p>
+<section><h2>Parent account</h2><p id="auth-status">Checking sign-in…</p><button id="github-login" type="button">Sign in with GitHub</button> <button id="github-logout" type="button" hidden>Sign out</button><p><small>GitHub OAuth must first be enabled in Supabase Authentication. Remote syncing and pairing are not active yet.</small></p><h3>My child devices</h3><div id="remote-devices">Sign in to see enrolled devices.</div></section><section><h2>Import child activity</h2><p>This first version reads a report exported from Watcher Child. Reports stay in this browser session and are not uploaded to a server.</p>
 <label for="file">Choose JSON report</label><input id="file" type="file" accept=".json,application/json">
 <p>Or paste the JSON shared by the child app:</p><textarea id="paste" rows="4" style="width:100%;box-sizing:border-box" placeholder="Paste activity JSON here"></textarea>
 <p><button id="load">Load report</button> <button id="clear" type="button">Clear</button></p><p id="status" role="status">No report loaded.</p></section>
 <section><h2>Overview</h2><p id="summary">Import a report to see recent activity.</p><div id="counts"></div></section>
 <section><h2>Activity timeline</h2><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Android package</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section><h2>Current limitations</h2><p>This is not live monitoring. No device pairing, remote syncing, website history, blocking or screen viewing is available yet. Only import reports from devices you are authorized to supervise.</p></section>
-</main><script src="app.js"></script></body></html>
+</main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script><script src="config.js"></script><script src="auth.js"></script><script src="app.js"></script></body></html>
