@@ -13,7 +13,9 @@ login.addEventListener("click",async()=> {
   } catch(e){authStatus.textContent="Sign-in failed: "+e.message;}
 });
 logout.addEventListener("click",async()=>{await authClient.auth.signOut();location.reload()});
+let refreshSequence=0;
 async function refreshAuth(){
+  const sequence=++refreshSequence;
   let user, error;
   try {({data:{user},error}=await authClient.auth.getUser());}
   catch(e){authStatus.textContent="Session check failed: "+e.message;return;}
@@ -22,7 +24,8 @@ async function refreshAuth(){
   login.hidden=true;logout.hidden=false;
   const {data,error:queryError}=await authClient.from("child_devices").select("id,display_name,last_seen_at").order("created_at",{ascending:false});
   if(queryError){devices.textContent="Unable to load devices: "+queryError.message;return;}
-  devices.replaceChildren();
+  if(sequence!==refreshSequence)return;
+  const rendered=document.createDocumentFragment();
   if(!data.length){devices.textContent="No devices paired yet. Generate a code below and enter it on the child device.";return;}
   for(const d of data){
     const section=document.createElement("section");
@@ -32,8 +35,9 @@ async function refreshAuth(){
     const list=document.createElement("ul");
     if(eventError){const li=document.createElement("li");li.textContent="Could not load activity.";list.append(li);}
     else for(const e of events){const li=document.createElement("li");li.textContent=new Date(e.occurred_at).toLocaleString()+" — "+e.package_name;list.append(li);}
-    section.append(list);devices.append(section);
+    section.append(list);rendered.append(section);
   }
+  if(sequence===refreshSequence)devices.replaceChildren(rendered);
 }
 if(authClient){
   const params = new URLSearchParams(location.search);
@@ -60,5 +64,6 @@ document.getElementById("make-code").addEventListener("click",async()=>{
   });
   const result=await response.json();
   output.textContent=response.ok?"Enter this code in Watcher Child within 10 minutes: "+result.code:(result.error||"Unable to create code");
+  if(response.ok)refreshAuth();
  }catch(e){output.textContent="Connection error: "+e.message}
 });
