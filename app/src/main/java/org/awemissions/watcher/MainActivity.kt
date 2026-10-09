@@ -16,6 +16,10 @@ import android.widget.TextView
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.widget.EditText
+import android.widget.Toast
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -51,6 +55,7 @@ class MainActivity : Activity() {
         label("Usage access: " + if (hasUsageAccess()) "Granted" else "Not granted")
         button("Open usage-access settings") { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         button("Refresh activity") { refresh() }
+        addPairingControls()
         if (hasUsageAccess()) button("Share activity report with parent") { shareReport() }
         if (!hasUsageAccess()) {
             label("Grant usage access in Android Settings to display this device's recent foreground app activity. Nothing is uploaded.")
@@ -71,6 +76,68 @@ class MainActivity : Activity() {
         val formatter = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
         items.takeLast(40).asReversed().forEach { (time, app) -> label("${formatter.format(Date(time))} — $app") }
         if (items.isEmpty()) label("No activity available for this period.")
+    }
+    private val endpoint = "https://basnmfloksrslqinonaw.supabase.co/functions/v1/watcher-sync"
+    private fun addPairingControls() {
+        val prefs = getSharedPreferences("watcher_pairing", MODE_PRIVATE)
+        label(if (prefs.contains("token")) "Paired device — manual sync enabled" else "Not paired with a parent", true)
+        if (!prefs.contains("token")) {
+            val codeInput = EditText(this).apply { hint = "Paste parent pairing code"; isSingleLine = true }
+            content.addView(codeInput)
+            button("Pair with parent") {
+                val code = codeInput.text.toString().trim()
+                if (!Regex("[0-9a-f]{64}").matches(code)) {
+                    Toast.makeText(this, "Enter the full 64-character pairing code", Toast.LENGTH_LONG).show()
+                } else request(JSONObject().put("action", "claim").put("code", code)) { response ->
+                    prefs.edit().putString("deviceId", response.getString("deviceId"))
+                        .putString("token", response.getString("deviceToken")).apply()
+                    refresh()
+                }
+            }
+        } else {
+            button("Sync recent activity to parent") {
+                if (!hasUsageAccess()) {
+                    Toast.makeText(this, "Enable usage access first", Toast.LENGTH_LONG).show()
+                } else {
+                    val now = System.currentTimeMillis()
+                    val events = JSONArray()
+                    ActivitySummary.recent(this, now - 86_400_000L, now).takeLast(500).forEach {
+                        events.put(JSONObject().put("timestamp", it.timestamp).put("packageName", it.packageName))
+                    }
+                    request(JSONObject().put("action", "sync")
+                        .put("deviceId", prefs.getString("deviceId", ""))
+                        .put("deviceToken", prefs.getString("token", ""))
+                        .put("events", events)) {
+                        Toast.makeText(this, "Activity synchronized", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            button("Unpair this device") { prefs.edit().clear().apply(); refresh() }
+        }
+    }
+    private fun request(payload: JSONObject, onSuccess: (JSONObject) -> Unit) {
+        Thread {
+            try {
+                val conn = URL(endpoint).openConnection() as HttpsURLConnection
+                conn.requestMethod = "POST"
+                conn.connectTimeout = 12000
+                conn.readTimeout = 12000
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = conn.responseCode
+                val body = (if (status in 200..299) conn.inputStream else conn.errorStream)
+                    .bufferedReader().use { it.readText() }
+                val response = JSONObject(body)
+                runOnUiThread {
+                    if (status in 200..299) onSuccess(response)
+                    else Toast.makeText(this, response.optString("error", "Request failed"), Toast.LENGTH_LONG).show()
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "Connection failed: " + e.message, Toast.LENGTH_LONG).show() }
+            }
+        }.start()
     }
     private fun shareReport() {
         if (!hasUsageAccess()) return
