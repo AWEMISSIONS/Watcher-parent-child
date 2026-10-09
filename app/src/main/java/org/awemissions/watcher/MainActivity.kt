@@ -16,6 +16,8 @@ import android.widget.TextView
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var content: LinearLayout
@@ -49,6 +51,7 @@ class MainActivity : Activity() {
         label("Usage access: " + if (hasUsageAccess()) "Granted" else "Not granted")
         button("Open usage-access settings") { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         button("Refresh activity") { refresh() }
+        if (hasUsageAccess()) button("Share activity report with parent") { shareReport() }
         if (!hasUsageAccess()) {
             label("Grant usage access in Android Settings to display this device's recent foreground app activity. Nothing is uploaded.")
             return
@@ -68,6 +71,24 @@ class MainActivity : Activity() {
         val formatter = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
         items.takeLast(40).asReversed().forEach { (time, app) -> label("${formatter.format(Date(time))} — $app") }
         if (items.isEmpty()) label("No activity available for this period.")
+    }
+    private fun shareReport() {
+        if (!hasUsageAccess()) return
+        val now = System.currentTimeMillis()
+        val entries = ActivitySummary.recent(this, now - 86_400_000L, now).takeLast(500)
+        val records = JSONArray()
+        entries.forEach { entry ->
+            records.put(JSONObject().put("timestamp", entry.timestamp).put("packageName", entry.packageName))
+        }
+        val report = JSONObject()
+            .put("schemaVersion", 1)
+            .put("generatedAt", now)
+            .put("events", records)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_TEXT, report.toString())
+        }
+        startActivity(Intent.createChooser(intent, "Share Watcher report"))
     }
     override fun onResume() { super.onResume(); if (::content.isInitialized) refresh() }
 }
