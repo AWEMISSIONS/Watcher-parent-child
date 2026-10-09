@@ -15,4 +15,26 @@ small{color:#536174}.muted{color:#536174}#status{font-weight:600}
 <section><h2>Overview</h2><p id="summary">Import a report to see recent activity.</p><div id="counts"></div></section>
 <section><h2>Activity timeline</h2><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Android package</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <section><h2>Current limitations</h2><p>This is not live monitoring. No device pairing, remote syncing, website history, blocking or screen viewing is available yet. Only import reports from devices you are authorized to supervise.</p></section>
-</main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script><script src="config.js"></script><script src="auth.js"></script><script src="app.js"></script></body></html>
+</main><script>
+window.addEventListener("error",function(e){
+ const status=document.getElementById("auth-status");
+ if(status && (status.textContent.includes("Checking") || status.textContent.includes("Redirecting"))) status.textContent="Login initialization error: "+(e.message||"A required script failed to load");
+});
+function watcherAuthLoad(){
+ const status=document.getElementById("auth-status");
+ if(!window.supabase?.createClient){status.textContent="Authentication library unavailable. Check your connection and refresh.";return;}
+ const script=document.createElement("script");script.src="auth.js?v=3";
+ script.onerror=()=>status.textContent="Watcher login script failed to load. Refresh the page.";
+ document.body.appendChild(script);
+}
+function watcherSdkFallback(){
+ const script=document.createElement("script");
+ script.src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js";
+ script.onload=watcherAuthLoad;
+ script.onerror=()=>document.getElementById("auth-status").textContent="Both login library sources failed. Check browser network settings.";
+ document.body.appendChild(script);
+}
+</script>
+<script src="config.js?v=3"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" onload="watcherAuthLoad()" onerror="watcherSdkFallback()"></script>
+<script src="app.js"></script></body></html>
