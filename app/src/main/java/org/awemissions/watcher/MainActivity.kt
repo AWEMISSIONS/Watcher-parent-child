@@ -31,6 +31,8 @@ class MainActivity : Activity() {
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 36, 32, 32) }
         scroll.addView(content)
         setContentView(scroll)
+        val prefs = getSharedPreferences("watcher_pairing", MODE_PRIVATE)
+        if (prefs.getBoolean("autoSync", false) && prefs.contains("token")) ActivitySyncWorker.schedule(this)
         refresh()
     }
     private fun label(text: String, heading: Boolean = false) {
@@ -80,7 +82,7 @@ class MainActivity : Activity() {
     private val endpoint = "https://basnmfloksrslqinonaw.supabase.co/functions/v1/watcher-sync"
     private fun addPairingControls() {
         val prefs = getSharedPreferences("watcher_pairing", MODE_PRIVATE)
-        label(if (prefs.contains("token")) "Paired device — manual sync enabled" else "Not paired with a parent", true)
+        label(if (prefs.contains("token")) "Paired device — background sync available" else "Not paired with a parent", true)
         if (!prefs.contains("token")) {
             val codeInput = EditText(this).apply { hint = "Paste parent pairing code"; isSingleLine = true }
             content.addView(codeInput)
@@ -91,10 +93,20 @@ class MainActivity : Activity() {
                 } else request(JSONObject().put("action", "claim").put("code", code)) { response ->
                     prefs.edit().putString("deviceId", response.getString("deviceId"))
                         .putString("token", response.getString("deviceToken")).apply()
+                    prefs.edit().putBoolean("autoSync", true).apply()
+                    ActivitySyncWorker.schedule(this)
                     refresh()
                 }
             }
         } else {
+            label("Automatic background sync: " + if (prefs.getBoolean("autoSync", false)) "ON (approximately every 15 minutes)" else "OFF")
+            label(prefs.getString("syncStatus", "No automatic sync completed yet") ?: "No automatic sync completed yet")
+            button(if (prefs.getBoolean("autoSync", false)) "Turn off automatic sync" else "Turn on automatic sync") {
+                val enabled = !prefs.getBoolean("autoSync", false)
+                prefs.edit().putBoolean("autoSync", enabled).apply()
+                if (enabled) ActivitySyncWorker.schedule(this) else ActivitySyncWorker.stop(this)
+                refresh()
+            }
             button("Sync recent activity to parent") {
                 if (!hasUsageAccess()) {
                     Toast.makeText(this, "Enable usage access first", Toast.LENGTH_LONG).show()
@@ -112,7 +124,7 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            button("Unpair this device") { prefs.edit().clear().apply(); refresh() }
+            button("Unpair this device") { ActivitySyncWorker.stop(this); prefs.edit().clear().apply(); refresh() }
         }
     }
     private fun request(payload: JSONObject, onSuccess: (JSONObject) -> Unit) {
