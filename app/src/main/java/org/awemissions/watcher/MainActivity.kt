@@ -63,6 +63,13 @@ class MainActivity : Activity() {
             label("Grant usage access in Android Settings to display this device's recent foreground app activity. Nothing is uploaded.")
             return
         }
+        label("Today's app screen time (Android estimates)", true)
+        AppUsageReport.today(this).take(25).forEach { item ->
+            val browser = if (item.browser) " [BROWSER]" else ""
+            label("${item.packageName}${browser} — ${AppUsageReport.duration(item.milliseconds)}")
+        }
+        label("Opera and other browsers: Watcher can detect when the browser is used, but Android usage access cannot read its URLs, searches, tabs, or incognito history. Website coverage: NOT ENABLED.")
+        label("Private/incognito visits are not reported as URLs. Any future website monitoring requires a separate, visible, explicitly enabled managed-browser or network-filtering feature; encrypted traffic may still limit visibility.")
         label("Recent app activity (last 24 hours)", true)
         val manager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val end = System.currentTimeMillis()
