@@ -13,6 +13,16 @@ The guardian can review device activity, approve app requests, configure an allo
 - **Windows companion:** visible status, timestamped app activity, and managed-browser activity. Unmonitored applications/browsers are blocked only when enforceable through an administrator-configured allowlist; otherwise report the coverage gap.
 - **Policy-managed browsing:** disable private browsing through supported device/browser policies. Log search terms only in a managed browser that clearly discloses this behavior. Do not inspect encrypted traffic or collect keystrokes.
 
+## Current Android monitoring coverage (October 2026)
+
+- The Android child app collects timestamped foreground application launches with Usage Access and can sync them to a paired guardian when its backend is available.
+- The child app also shows approximate daily foreground time per app and flags known browsers, including Opera and Opera Mini. These local duration summaries are **not yet synced** to the guardian dashboard.
+- **Website URLs, pages, search terms, incognito tabs, and incognito history are NOT collected.** Usage Access tells us that a browser was foregrounded, not which website it visited.
+- Domain-level web filtering/reporting would require a separately consented and visible Android VPN/DNS component or a managed browser. DNS domains are not exact URLs or proof that the child opened a webpage, and encrypted DNS, VPNs, and browser-specific networking can create gaps.
+- For a strict policy, use a supported managed-device/browser configuration to disable private browsing or restrict unsupported browsers, showing any gap in the parent dashboard. Do not promise tamper-proof enforcement on a normally installed companion.
+- Existing automatic sync is opportunistic (approximately 15-minute WorkManager scheduling, subject to Android restrictions); a paused/unavailable backend means the parent has no new records.
+- Do not ship as production-ready without testing build, backend enrollment, child disclosure, reports, and data-retention controls.
+
 ## Platform constraints to design around
 
 - Android screen capture requires user approval for each capture session. App suspension/allowlisting through Android Enterprise device policy requires device/profile-owner management; ordinary app installation alone cannot guarantee that every installed app launch is gated.
