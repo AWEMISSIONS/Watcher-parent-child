@@ -1,0 +1,27 @@
+name: Shared protocol and Windows checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tests/*.test.mjs
+      - run: node --check docs/app.js
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse companion and verify current-user token encryption
+        shell: powershell
+        run: |
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path windows/Watcher.ps1),[ref]$null,[ref]$errors) | Out-Null
+          if($errors.Count){throw ($errors | Out-String)}
+          Import-Module ./windows/Watcher.Protocol.psm1
+          if((Unprotect-WatcherToken (Protect-WatcherToken 'test-only')) -ne 'test-only'){throw 'Secret round trip failed'}
