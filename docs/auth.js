@@ -4,6 +4,9 @@ const login = document.getElementById("github-login");
 const logout = document.getElementById("github-logout");
 const authStatus = document.getElementById("auth-status");
 const devices = document.getElementById("remote-devices");
+const refreshButton=document.createElement("button");
+refreshButton.textContent="Refresh devices";refreshButton.type="button";
+devices.before(refreshButton);refreshButton.addEventListener("click",()=>refreshAuth());
 login.addEventListener("click",async()=> {
   if(!authClient){authStatus.textContent="Login library did not load. Open this page in Chrome and refresh.";return;}
   authStatus.textContent="Redirecting to GitHub…";
@@ -31,6 +34,11 @@ async function refreshAuth(){
     const section=document.createElement("section");
     const h=document.createElement("h3");h.textContent=d.display_name;section.append(h);
     const p=document.createElement("p");p.textContent="Last seen: "+(d.last_seen_at?new Date(d.last_seen_at).toLocaleString():"Never");section.append(p);
+    const coverage=document.createElement("p");
+    coverage.textContent=!d.last_seen_at||Date.now()-Date.parse(d.last_seen_at)>30*60*1000
+      ?"No recent sync. Device may be offline, paused, or waiting for Android background scheduling."
+      :"Recent sync received. Application activity only; website history and blocking are unavailable.";
+    section.append(coverage);
     const {data:events,error:eventError}=await authClient.from("activity_events").select("package_name,occurred_at").eq("device_id",d.id).order("occurred_at",{ascending:false}).limit(50);
     const list=document.createElement("ul");
     if(eventError){const li=document.createElement("li");li.textContent="Could not load activity.";list.append(li);}
@@ -54,6 +62,7 @@ pairing.innerHTML='<h3>Pair a child device</h3><p>Generate a one-time code (vali
 document.querySelector("main").insertBefore(pairing,document.querySelector("main").children[1]);
 document.getElementById("make-code").addEventListener("click",async()=>{
  const output=document.getElementById("pair-result");
+ if(!authClient){output.textContent="Authentication unavailable. Check connection and refresh.";return;}
  output.textContent="Generating…";
  const {data:{session}}=await authClient.auth.getSession();
  if(!session){output.textContent="Please sign in first.";return;}
@@ -67,3 +76,7 @@ document.getElementById("make-code").addEventListener("click",async()=>{
   if(response.ok)refreshAuth();
  }catch(e){output.textContent="Connection error: "+e.message}
 });
+// Poll only while the parent dashboard is visible. Never describe cached events as live.
+setInterval(()=>{if(!document.hidden&&authClient)refreshAuth().catch(()=>{
+ authStatus.textContent="Unable to refresh. Backend may be unavailable. Displayed activity may be out of date.";
+});},30000);

@@ -32,7 +32,7 @@ class MainActivity : Activity() {
         scroll.addView(content)
         setContentView(scroll)
         val prefs = getSharedPreferences("watcher_pairing", MODE_PRIVATE)
-        if (prefs.getBoolean("autoSync", false) && prefs.contains("token")) ActivitySyncWorker.schedule(this)
+        if (prefs.getBoolean("autoSync", false) && (DeviceSecret.read(prefs) != null)) ActivitySyncWorker.schedule(this)
         refresh()
     }
     private fun label(text: String, heading: Boolean = false) {
@@ -60,7 +60,7 @@ class MainActivity : Activity() {
         addPairingControls()
         if (hasUsageAccess()) button("Share activity report with parent") { shareReport() }
         if (!hasUsageAccess()) {
-            label("Grant usage access in Android Settings to display this device's recent foreground app activity. Nothing is uploaded.")
+            label("Grant usage access in Android Settings to display this device's recent foreground app activity. Uploads require pairing and enabled sync.")
             return
         }
         label("Today's app screen time (Android estimates)", true)
@@ -89,8 +89,8 @@ class MainActivity : Activity() {
     private val endpoint = "https://basnmfloksrslqinonaw.supabase.co/functions/v1/watcher-sync"
     private fun addPairingControls() {
         val prefs = getSharedPreferences("watcher_pairing", MODE_PRIVATE)
-        label(if (prefs.contains("token")) "Paired device — background sync available" else "Not paired with a parent", true)
-        if (!prefs.contains("token")) {
+        label(if ((DeviceSecret.read(prefs) != null)) "Paired device — background sync available" else "Not paired with a parent", true)
+        if (!(DeviceSecret.read(prefs) != null)) {
             val codeInput = EditText(this).apply { hint = "Paste parent pairing code"; isSingleLine = true }
             content.addView(codeInput)
             button("Pair with parent") {
@@ -99,7 +99,8 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Enter the full 64-character pairing code", Toast.LENGTH_LONG).show()
                 } else request(JSONObject().put("action", "claim").put("code", code)) { response ->
                     prefs.edit().putString("deviceId", response.getString("deviceId"))
-                        .putString("token", response.getString("deviceToken")).apply()
+                        .apply()
+                    DeviceSecret.save(prefs, response.getString("deviceToken"))
                     prefs.edit().putBoolean("autoSync", true).apply()
                     ActivitySyncWorker.schedule(this)
                     refresh()
@@ -118,17 +119,8 @@ class MainActivity : Activity() {
                 if (!hasUsageAccess()) {
                     Toast.makeText(this, "Enable usage access first", Toast.LENGTH_LONG).show()
                 } else {
-                    val now = System.currentTimeMillis()
-                    val events = JSONArray()
-                    ActivitySummary.recent(this, now - 86_400_000L, now).takeLast(500).forEach {
-                        events.put(JSONObject().put("timestamp", it.timestamp).put("packageName", it.packageName))
-                    }
-                    request(JSONObject().put("action", "sync")
-                        .put("deviceId", prefs.getString("deviceId", ""))
-                        .put("deviceToken", prefs.getString("token", ""))
-                        .put("events", events)) {
-                        Toast.makeText(this, "Activity synchronized", Toast.LENGTH_LONG).show()
-                    }
+                    ActivitySyncWorker.syncNow(this)
+                    Toast.makeText(this, "Sync queued. Refresh to check status.", Toast.LENGTH_LONG).show()
                 }
             }
             button("Unpair this device") { ActivitySyncWorker.stop(this); prefs.edit().clear().apply(); refresh() }

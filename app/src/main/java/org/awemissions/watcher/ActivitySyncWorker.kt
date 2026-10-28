@@ -7,6 +7,9 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.workDataOf
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkerParameters
 import androidx.work.WorkManager
@@ -23,9 +26,10 @@ import javax.net.ssl.HttpsURLConnection
 class ActivitySyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences("watcher_pairing", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("autoSync", false)) return Result.success()
+        val manual = inputData.getBoolean("manual", false)
+        if (!manual && !prefs.getBoolean("autoSync", false)) return Result.success()
         val deviceId = prefs.getString("deviceId", null) ?: return Result.success()
-        val token = prefs.getString("token", null) ?: return Result.success()
+        val token = DeviceSecret.read(prefs) ?: return Result.success()
         val ops = applicationContext.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         if (ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), applicationContext.packageName) != AppOpsManager.MODE_ALLOWED) {
             prefs.edit().putString("syncStatus", "Usage access required").apply()
@@ -40,7 +44,7 @@ class ActivitySyncWorker(context: Context, params: WorkerParameters) : Coroutine
             // The server limits each request to 500 records. Advance checkpoint only after all batches succeed.
             val batches = events.chunked(500).ifEmpty { listOf(emptyList()) }
             for (batch in batches) {
-                if (prefs.getString("token", null) != token || !prefs.getBoolean("autoSync", false)) return Result.success()
+                if (DeviceSecret.read(prefs) != token || (!manual && !prefs.getBoolean("autoSync", false))) return Result.success()
                 val records = JSONArray()
                 batch.forEach { records.put(JSONObject().put("timestamp", it.timestamp).put("packageName", it.packageName)) }
                 val payload = JSONObject().put("action", "sync").put("deviceId", deviceId).put("deviceToken", token).put("events", records)
@@ -70,6 +74,12 @@ class ActivitySyncWorker(context: Context, params: WorkerParameters) : Coroutine
 
     companion object {
         private const val WORK_NAME = "watcher-visible-activity-sync"
+        fun syncNow(context: Context) {
+            val request = OneTimeWorkRequestBuilder<ActivitySyncWorker>()
+                .setInputData(workDataOf("manual" to true))
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+            WorkManager.getInstance(context).enqueueUniqueWork("watcher-manual-sync", ExistingWorkPolicy.KEEP, request)
+        }
         fun schedule(context: Context) {
             val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
             val request = PeriodicWorkRequestBuilder<ActivitySyncWorker>(15, TimeUnit.MINUTES)
@@ -78,6 +88,7 @@ class ActivitySyncWorker(context: Context, params: WorkerParameters) : Coroutine
         }
         fun stop(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork("watcher-manual-sync")
         }
     }
 }
