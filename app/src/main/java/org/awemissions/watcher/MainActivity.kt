@@ -86,7 +86,7 @@ class MainActivity : Activity() {
         items.takeLast(40).asReversed().forEach { (time, app) -> label("${formatter.format(Date(time))} — $app") }
         if (items.isEmpty()) label("No activity available for this period.")
     }
-    private val endpoint = "https://basnmfloksrslqinonaw.supabase.co/functions/v1/watcher-sync"
+    private val endpoint = "https://heaths-app-hub.heath-tolley.chatgpt.site/api/watcher"
     private fun addPairingControls() {
         val prefs = getSharedPreferences("watcher_pairing", MODE_PRIVATE)
         label(if ((DeviceSecret.read(prefs) != null)) "Paired device — background sync available" else "Not paired with a parent", true)
@@ -112,7 +112,16 @@ class MainActivity : Activity() {
             button(if (prefs.getBoolean("autoSync", false)) "Turn off automatic sync" else "Turn on automatic sync") {
                 val enabled = !prefs.getBoolean("autoSync", false)
                 prefs.edit().putBoolean("autoSync", enabled).apply()
-                if (enabled) ActivitySyncWorker.schedule(this) else ActivitySyncWorker.stop(this)
+                if (enabled) ActivitySyncWorker.schedule(this) else {
+                    ActivitySyncWorker.stop(this)
+                    request(JSONObject().put("action", "sync").put("deviceId", prefs.getString("deviceId", ""))
+                        .put("deviceToken", DeviceSecret.read(prefs)).put("events", JSONArray())
+                        .put("platform", "android").put("monitoringEnabled", false)
+                        .put("coverage", JSONObject().put("appActivity", hasUsageAccess()))) {
+                        prefs.edit().putString("syncStatus", "Monitoring paused; parent notified.").apply()
+                        refresh()
+                    }
+                }
                 refresh()
             }
             button("Sync recent activity to parent") {
@@ -124,6 +133,32 @@ class MainActivity : Activity() {
                 }
             }
             button("Unpair this device") { ActivitySyncWorker.stop(this); prefs.edit().clear().apply(); refresh() }
+            label("Family guidelines (advisory)", true)
+            label("Guidelines and approval decisions are shared with your parent. This app does not block or unlock applications.")
+            val policy = JSONObject(prefs.getString("familyPolicy", "{}") ?: "{}")
+            label(policy.optString("note", "No family note received yet."))
+            val allowed = policy.optJSONArray("allowedApps") ?: JSONArray()
+            label("Approved applications: " + (0 until allowed.length()).joinToString(", ") { allowed.optString(it) }.ifEmpty { "None listed" })
+            val appInput = EditText(this).apply { hint = "App name or Android package"; isSingleLine = true }
+            val messageInput = EditText(this).apply { hint = "Message to your parent (optional)" }
+            content.addView(appInput); content.addView(messageInput)
+            button("Ask parent to approve an app") {
+                val requested = appInput.text.toString().trim()
+                val message = messageInput.text.toString().trim().ifEmpty { "Please approve this application." }
+                if (requested.isEmpty() || requested.length > 300 || message.length > 500) {
+                    Toast.makeText(this, "Use an app name under 300 characters and a message under 500.", Toast.LENGTH_LONG).show()
+                } else request(JSONObject().put("action", "request").put("deviceId", prefs.getString("deviceId", ""))
+                    .put("deviceToken", DeviceSecret.read(prefs)).put("packageName", requested).put("message", message)) {
+                    ActivitySyncWorker.syncNow(this)
+                    Toast.makeText(this, "Request sent. Sync to check the reply.", Toast.LENGTH_LONG).show()
+                }
+            }
+            val requests = JSONArray(prefs.getString("appRequests", "[]") ?: "[]")
+            label("App request decisions", true)
+            for (i in 0 until requests.length()) {
+                val item = requests.getJSONObject(i)
+                label(item.optString("package_name") + " — " + item.optString("status"))
+            }
         }
     }
     private fun request(payload: JSONObject, onSuccess: (JSONObject) -> Unit) {

@@ -1,5 +1,5 @@
 Set-StrictMode -Version Latest
-$script:Endpoint = 'https://basnmfloksrslqinonaw.supabase.co/functions/v1/watcher-sync'
+$script:Endpoint = 'https://heaths-app-hub.heath-tolley.chatgpt.site/api/watcher'
 function Invoke-Watcher {
  param([Parameter(Mandatory)][hashtable]$Payload)
  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

@@ -1,15 +1,13 @@
 /** Shared Watcher protocol client. Never pass a service-role key to clients. */
 export class WatcherClient {
-  constructor(endpoint, {fetch: transport = globalThis.fetch, accessToken} = {}) {
+  constructor(endpoint, {fetch: transport = globalThis.fetch} = {}) {
     const url = new URL(endpoint);
     if (url.protocol !== 'https:' && url.hostname !== 'localhost') throw Error('HTTPS required');
-    this.endpoint = endpoint; this.transport = transport; this.accessToken = accessToken;
+    this.endpoint = endpoint; this.transport = transport;
   }
   async call(action, payload = {}) {
     const headers = {'Content-Type':'application/json'};
-    const token = typeof this.accessToken === 'function' ? await this.accessToken() : this.accessToken;
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await this.transport(this.endpoint, {method:'POST', headers,
+    const response = await this.transport(this.endpoint, {method:'POST', headers, credentials:'same-origin',
       body:JSON.stringify({...payload,action}), signal:AbortSignal.timeout(20000)});
     let result;
     try { result = await response.json(); } catch { throw Error(`Server unavailable (${response.status})`); }
@@ -17,6 +15,7 @@ export class WatcherClient {
     return result;
   }
   create(name) { return this.call('create',{name}); }
+  request(credentials,packageName,message='Please approve this application.') { return this.call('request',{...credentials,packageName,message}); }
   claim(code) { if (!/^[a-f0-9]{64}$/.test(code)) throw Error('Invalid pairing code'); return this.call('claim',{code}); }
   async sync(credentials, events, metadata = {}) {
     let result;

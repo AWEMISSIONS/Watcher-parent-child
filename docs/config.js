@@ -1,1 +1,0 @@
-window.WATCHER_CONFIG = Object.freeze({supabaseUrl:"https://basnmfloksrslqinonaw.supabase.co",publishableKey:"sb_publishable_Rd-WeLZAfU5oIi8PnhPpKw_z8vVmAL6"});

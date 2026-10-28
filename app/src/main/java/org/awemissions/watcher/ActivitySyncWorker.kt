@@ -31,15 +31,12 @@ class ActivitySyncWorker(context: Context, params: WorkerParameters) : Coroutine
         val deviceId = prefs.getString("deviceId", null) ?: return Result.success()
         val token = DeviceSecret.read(prefs) ?: return Result.success()
         val ops = applicationContext.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        if (ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), applicationContext.packageName) != AppOpsManager.MODE_ALLOWED) {
-            prefs.edit().putString("syncStatus", "Usage access required").apply()
-            return Result.success()
-        }
+        val usageAccess = ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), applicationContext.packageName) == AppOpsManager.MODE_ALLOWED
         val now = System.currentTimeMillis()
         // Overlap by two minutes for late usage events; server deduplicates by event identity.
         val last = prefs.getLong("lastSync", 0L)
         val since = if (last == 0L) now - 86_400_000L else maxOf(now - 8L * 86_400_000L, last - 120_000L)
-        val events = ActivitySummary.recent(applicationContext, since, now)
+        val events = if (usageAccess) ActivitySummary.recent(applicationContext, since, now) else emptyList()
         return try {
             // The server limits each request to 500 records. Advance checkpoint only after all batches succeed.
             val batches = events.chunked(500).ifEmpty { listOf(emptyList()) }
@@ -47,8 +44,17 @@ class ActivitySyncWorker(context: Context, params: WorkerParameters) : Coroutine
                 if (DeviceSecret.read(prefs) != token || (!manual && !prefs.getBoolean("autoSync", false))) return Result.success()
                 val records = JSONArray()
                 batch.forEach { records.put(JSONObject().put("timestamp", it.timestamp).put("packageName", it.packageName)) }
+                val daily = JSONArray()
+                val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now))
+                if (usageAccess) AppUsageReport.today(applicationContext).take(100).forEach {
+                    daily.put(JSONObject().put("day", day).put("packageName", it.packageName)
+                        .put("milliseconds", it.milliseconds.coerceIn(0L, 86_400_000L)))
+                }
                 val payload = JSONObject().put("action", "sync").put("deviceId", deviceId).put("deviceToken", token).put("events", records)
-                val connection = URL("https://basnmfloksrslqinonaw.supabase.co/functions/v1/watcher-sync").openConnection() as HttpsURLConnection
+                    .put("platform", "android").put("monitoringEnabled", prefs.getBoolean("autoSync", false))
+                    .put("coverage", JSONObject().put("appActivity", usageAccess))
+                    .put("acknowledgedRevision", prefs.getInt("policyRevision", 0)).put("dailyUsage", daily)
+                val connection = URL("https://heaths-app-hub.heath-tolley.chatgpt.site/api/watcher").openConnection() as HttpsURLConnection
                 try {
                     connection.requestMethod = "POST"
                     connection.connectTimeout = 15000
@@ -62,9 +68,15 @@ class ActivitySyncWorker(context: Context, params: WorkerParameters) : Coroutine
                         return Result.failure()
                     }
                     if (status !in 200..299) throw IllegalStateException("Server HTTP $status")
+                    val response = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    prefs.edit().putString("familyPolicy", response.getJSONObject("policy").toString())
+                        .putInt("policyRevision", response.getInt("revision"))
+                        .putString("appRequests", response.getJSONArray("requests").toString()).apply()
                 } finally { connection.disconnect() }
             }
-            prefs.edit().putLong("lastSync", now).putString("syncStatus", "Last successful sync: " + java.util.Date(now)).apply()
+            val editor = prefs.edit().putString("syncStatus", (if (usageAccess) "Last successful sync: " else "Usage access missing; family guidelines synced: ") + java.util.Date(now))
+            if (usageAccess) editor.putLong("lastSync", now)
+            editor.apply()
             Result.success()
         } catch (e: Exception) {
             prefs.edit().putString("syncStatus", "Waiting to retry: " + (e.message ?: "Network unavailable")).apply()
